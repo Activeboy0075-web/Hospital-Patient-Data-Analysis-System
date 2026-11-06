@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hospital Patient Data Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, sans-serif; background: #f3f6fb; color: #1e293b; }
+    header { background: #123b66; color: white; padding: 24px 5%; }
+    header h1 { margin: 0 0 8px; font-size: 25px; }
+    header p { margin: 0; color: #dbeafe; }
+    main { max-width: 1250px; margin: 28px auto; padding: 0 20px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 16px; }
+    .card, .panel { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 3px 12px #1e293b0c; }
+    .card p { color: #64748b; margin: 0 0 12px; }
+    .number { font-size: 28px; font-weight: bold; color: #123b66; overflow-wrap: anywhere; }
+    .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 18px; margin-top: 20px; }
+    h2 { font-size: 19px; margin: 0; }
+    .chart-wrap { height: 280px; position: relative; margin-top: 14px; }
+    .panel { margin-top: 20px; }
+    .filter-grid, .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 14px; align-items: end; }
+    label { display: grid; gap: 6px; color: #475569; font-size: 14px; }
+    input, select { width: 100%; min-height: 40px; padding: 9px 10px; border: 1px solid #cbd5e1; border-radius: 7px; color: #1e293b; background: white; }
+    button { border: 0; border-radius: 7px; background: #1769aa; color: white; padding: 10px 15px; cursor: pointer; min-height: 40px; }
+    button:hover { background: #12558c; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    .button-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .forms { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+    .forms .panel { margin-top: 20px; }
+    .forms h2 { margin-bottom: 16px; }
+    .table-panel { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 680px; }
+    th, td { padding: 12px; border-bottom: 1px solid #e2e8f0; text-align: left; }
+    th { background: #eff6ff; white-space: nowrap; }
+    .sort-button { min-height: 0; padding: 0; background: transparent; color: #123b66; font-weight: bold; }
+    .sort-button:hover { background: transparent; text-decoration: underline; }
+    .status { margin: 14px 0 0; color: #64748b; }
+    .pagination { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 14px; }
+    @media (max-width: 500px) {
+      header h1 { font-size: 21px; }
+      main { padding: 0 12px; }
+      .panel { padding: 16px; }
+      .pagination { align-items: stretch; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Hospital Patient Data Analysis System</h1>
+    <p>Patient visits, department workload and visit-type analytics</p>
+  </header>
+
+  <main>
+    <section class="cards" aria-label="Visit summary">
+      <div class="card"><p>Total Visits</p><div class="number" id="total">--</div></div>
+      <div class="card"><p>Departments</p><div class="number" id="departments">--</div></div>
+      <div class="card"><p>Unique Patient Codes</p><div class="number" id="patients">--</div></div>
+      <div class="card"><p>Visit Types</p><div class="number" id="types">--</div></div>
+      <div class="card"><p>Busiest Department</p><div class="number" id="topDepartment">--</div></div>
+      <div class="card"><p>Busiest Month</p><div class="number" id="topMonth">--</div></div>
+    </section>
+
+    <section class="charts" aria-label="Visit analytics">
+      <div class="panel"><h2>Visits by Department</h2><div class="chart-wrap"><canvas id="departmentChart"></canvas></div></div>
+      <div class="panel"><h2>Visit Type Distribution</h2><div class="chart-wrap"><canvas id="typeChart"></canvas></div></div>
+      <div class="panel"><h2>Monthly Visit Trend</h2><div class="chart-wrap"><canvas id="monthlyChart"></canvas></div></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading"><h2>Find Visits</h2></div>
+      <form id="filterForm" class="filter-grid">
+        <label>Search patient, department, or type
+          <input name="q" type="search" maxlength="100" placeholder="Search visits">
+        </label>
+        <label>Department
+          <select name="department"><option value="">All departments</option></select>
+        </label>
+        <label>Visit type
+          <select name="visit_type"><option value="">All visit types</option></select>
+        </label>
+        <label>From date<input name="start_date" type="date"></label>
+        <label>To date<input name="end_date" type="date"></label>
+        <label>Rows per page
+          <select name="per_page">
+            <option value="25">25</option><option value="50">50</option><option value="100">100</option>
+          </select>
+        </label>
+        <div class="button-row">
+          <button type="submit">Apply filters</button>
+          <button type="button" id="clearFilters">Clear</button>
+          <button type="button" id="exportCsv">Export CSV</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="forms" aria-label="Patient and visit entry">
+      <form class="panel" id="patientForm">
+        <h2>Register Patient Code</h2>
+        <div class="form-grid">
+          <label>Patient code
+            <input name="patient_code" maxlength="40" required autocomplete="off" placeholder="e.g. P-1001">
+          </label>
+          <button type="submit">Register patient</button>
+        </div>
+        <p class="status" id="patientStatus" role="status"></p>
+      </form>
+      <form class="panel" id="demoDataForm">
+        <h2>Generate Sample Data</h2>
+        <div class="form-grid">
+          <label>Number of synthetic patients
+            <input name="patient_count" type="number" min="1" max="100" value="20" required>
+          </label>
+          <button type="submit">Generate data</button>
+        </div>
+        <p class="status">Creates fictional patient codes and randomized visits only.</p>
+        <p class="status" id="demoDataStatus" role="status"></p>
+      </form>
+      <form class="panel" id="visitForm">
+        <h2>Add Patient Visit</h2>
+        <div class="form-grid">
+          <label>Patient code<select name="patient_code" required><option value="">Register or select a patient</option></select></label>
+          <label>Department<input name="department" list="departmentOptions" maxlength="100" required></label>
+          <datalist id="departmentOptions"></datalist>
+          <label>Visit date<input name="visit_date" type="date" required></label>
+          <label>Visit type<input name="visit_type" list="visitTypeOptions" maxlength="60" placeholder="Optional"></label>
+          <datalist id="visitTypeOptions"></datalist>
+          <button type="submit">Add visit</button>
+        </div>
+        <p class="status" id="visitStatus" role="status"></p>
+      </form>
+    </section>
+
+    <section class="panel table-panel">
+      <div class="panel-heading"><h2>Patient Visit Records</h2><button type="button" id="refresh">Refresh</button></div>
+      <table>
+        <thead><tr>
+          <th><button class="sort-button" data-sort="visit_id" type="button">Visit ID</button></th>
+          <th><button class="sort-button" data-sort="patient_code" type="button">Patient Code</button></th>
+          <th><button class="sort-button" data-sort="department" type="button">Department</button></th>
+          <th><button class="sort-button" data-sort="visit_date" type="button">Visit Date</button></th>
+          <th><button class="sort-button" data-sort="visit_type" type="button">Visit Type</button></th>
+        </tr></thead>
+        <tbody id="records"><tr><td colspan="5">Loading records...</td></tr></tbody>
+      </table>
+      <div class="pagination">
+        <p class="status" id="status" role="status">Connecting to database...</p>
+        <div class="button-row">
+          <button type="button" id="previousPage">Previous</button>
+          <span class="status" id="pageStatus" aria-live="polite"></span>
+          <button type="button" id="nextPage">Next</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const charts = { department: null, type: null, monthly: null };
+    let currentPage = 1;
+    let currentSort = "visit_date";
+    let currentDirection = "desc";
+
+    const filterForm = document.getElementById("filterForm");
+    const filterFields = ["q", "department", "visit_type", "start_date", "end_date"];
+
+    function currentFilters() {
+      const params = new URLSearchParams();
+      filterFields.forEach(name => {
+        const value = filterForm.elements[name].value.trim();
+        if (value) params.set(name, value);
+      });
+      return params;
+    }
+
+    function fillSelect(select, values, placeholder) {
+      const selected = select.value;
+      select.replaceChildren(new Option(placeholder, ""));
+      values.forEach(value => select.add(new Option(value, value)));
+      if (selected && !values.includes(selected)) select.add(new Option(selected, selected));
+      select.value = selected;
+    }
+
+    function fillDatalist(list, values) {
+      list.replaceChildren(...values.map(value => {
+        const option = document.createElement("option");
+        option.value = value;
+        return option;
+      }));
+    }
+
+    function drawCharts(analytics) {
+      const departmentRows = analytics.department_counts || [];
+      const typeRows = analytics.visit_type_counts || [];
+      const monthRows = analytics.monthly_counts || [];
+      const chartConfigs = [
+        {
+          key: "department",
+          canvas: "departmentChart",
+          rows: departmentRows,
+          type: "bar",
+          labels: departmentRows.map(row => row.department || "Not specified"),
+          values: departmentRows.map(row => row.visits),
+          label: "Number of Visits"
+        },
+        {
+          key: "type",
+          canvas: "typeChart",
+          rows: typeRows,
+          type: "doughnut",
+          labels: typeRows.map(row => row.visit_type || "Not specified"),
+          values: typeRows.map(row => row.visits),
+          label: "Visits"
+        },
+        {
+          key: "monthly",
+          canvas: "monthlyChart",
+          rows: monthRows,
+          type: "line",
+          labels: monthRows.map(row => row.month),
+          values: monthRows.map(row => row.visits),
+          label: "Visits per month"
+        }
+      ];
+
+      chartConfigs.forEach(config => {
+        if (charts[config.key]) charts[config.key].destroy();
+        charts[config.key] = new Chart(document.getElementById(config.canvas), {
+          type: config.type,
+          data: {
+            labels: config.labels,
+            datasets: [{
+              label: config.label,
+              data: config.values,
+              backgroundColor: ["#3182ce", "#38a169", "#ed8936", "#805ad5", "#e53e3e", "#0d9488"],
+              borderColor: "#3182ce",
+              tension: 0.25
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: config.type === "doughnut" ? {} : {
+              y: { beginAtZero: true, ticks: { precision: 0 } }
+            }
+          }
+        });
+      });
+    }
+
+    function updateSummary(analytics) {
+      const metrics = analytics.metrics || {};
+      document.getElementById("total").textContent = metrics.total_visits ?? 0;
+      document.getElementById("departments").textContent = metrics.department_count ?? 0;
+      document.getElementById("patients").textContent = metrics.patient_count ?? 0;
+      document.getElementById("types").textContent = metrics.visit_type_count ?? 0;
+      const topDepartment = (analytics.department_counts || [])[0];
+      const topMonth = (analytics.monthly_counts || [])
+        .reduce((top, row) => !top || row.visits > top.visits ? row : top, null);
+      document.getElementById("topDepartment").textContent = topDepartment?.department || "—";
+      document.getElementById("topMonth").textContent = topMonth?.month || "—";
+    }
+
+    function renderRecords(records) {
+      const body = document.getElementById("records");
+      body.replaceChildren();
+      if (!records.length) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 5;
+        cell.textContent = "No visits match these filters.";
+        row.appendChild(cell);
+        body.appendChild(row);
+        return;
+      }
+      records.forEach(record => {
+        const row = document.createElement("tr");
+        [record.visit_id, record.patient_code, record.department, record.visit_date, record.visit_type || "-"]
+          .forEach(value => {
+            const cell = document.createElement("td");
+            cell.textContent = value ?? "";
+            row.appendChild(cell);
+          });
+        body.appendChild(row);
+      });
+    }
+
+    function setVisitDateToToday() {
+      const today = new Date();
+      document.querySelector('#visitForm [name="visit_date"]').value =
+        `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    }
+
+    async function loadDashboard() {
+      const status = document.getElementById("status");
+      status.textContent = "Loading visits...";
+      try {
+        const params = currentFilters();
+        params.set("page", currentPage);
+        params.set("per_page", filterForm.elements.per_page.value);
+        params.set("sort", currentSort);
+        params.set("direction", currentDirection);
+        const [recordsResponse, optionsResponse, analyticsResponse, patientsResponse] = await Promise.all([
+          fetch(`/api/records/search?${params}`),
+          fetch("/api/record-options"),
+          fetch("/api/analytics"),
+          fetch("/api/patients")
+        ]);
+        for (const response of [recordsResponse, optionsResponse, analyticsResponse, patientsResponse]) {
+          if (!response.ok) {
+            const result = await response.json();
+            throw new Error(result.error || "One or more dashboard requests failed.");
+          }
+        }
+        const [result, options, analytics, patientCodes] = await Promise.all([
+          recordsResponse.json(), optionsResponse.json(), analyticsResponse.json(), patientsResponse.json()
+        ]);
+
+        fillSelect(filterForm.elements.department, options.departments || [], "All departments");
+        fillSelect(filterForm.elements.visit_type, options.visit_types || [], "All visit types");
+        fillDatalist(document.getElementById("departmentOptions"), options.departments || []);
+        fillDatalist(document.getElementById("visitTypeOptions"), options.visit_types || []);
+        const patientSelect = document.querySelector('#visitForm [name="patient_code"]');
+        const selectedPatient = patientSelect.value;
+        patientSelect.replaceChildren(new Option("Select a patient", ""));
+        patientCodes.forEach(code => patientSelect.add(new Option(code, code)));
+        if (selectedPatient && patientCodes.includes(selectedPatient)) patientSelect.value = selectedPatient;
+
+        updateSummary(analytics);
+        drawCharts(analytics);
+        renderRecords(result.records);
+        const first = result.total ? (result.page - 1) * result.per_page + 1 : 0;
+        const last = Math.min(result.page * result.per_page, result.total);
+        status.textContent = `Showing ${first}–${last} of ${result.total} visits.`;
+        document.getElementById("pageStatus").textContent = `Page ${result.page} of ${Math.max(result.pages, 1)}`;
+        document.getElementById("previousPage").disabled = result.page <= 1;
+        document.getElementById("nextPage").disabled = result.page >= result.pages;
+      } catch (error) {
+        status.textContent = `Could not load dashboard data: ${error.message}`;
+        console.error(error);
+      }
+    }
+
+    filterForm.addEventListener("submit", event => {
+      event.preventDefault();
+      currentPage = 1;
+      loadDashboard();
+    });
+    document.getElementById("clearFilters").addEventListener("click", () => {
+      filterForm.reset();
+      currentPage = 1;
+      loadDashboard();
+    });
+    document.getElementById("refresh").addEventListener("click", loadDashboard);
+    document.getElementById("previousPage").addEventListener("click", () => {
+      if (currentPage > 1) {
+        currentPage -= 1;
+        loadDashboard();
+      }
+    });
+    document.getElementById("nextPage").addEventListener("click", () => {
+      currentPage += 1;
+      loadDashboard();
+    });
+    document.getElementById("filterForm").elements.per_page.addEventListener("change", () => {
+      currentPage = 1;
+      loadDashboard();
+    });
+    document.querySelectorAll(".sort-button").forEach(button => {
+      button.addEventListener("click", () => {
+        const selectedSort = button.dataset.sort;
+        currentDirection = currentSort === selectedSort && currentDirection === "asc" ? "desc" : "asc";
+        currentSort = selectedSort;
+        currentPage = 1;
+        loadDashboard();
+      });
+    });
+    document.getElementById("exportCsv").addEventListener("click", () => {
+      const params = currentFilters();
+      params.set("sort", currentSort);
+      params.set("direction", currentDirection);
+      window.location.assign(`/api/records/export?${params}`);
+    });
+
+    document.getElementById("patientForm").addEventListener("submit", async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const status = document.getElementById("patientStatus");
+      status.textContent = "Registering patient code...";
+      try {
+        const response = await fetch("/api/patients", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ patient_code: form.elements.patient_code.value })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not register patient.");
+        status.textContent = "Patient code registered.";
+        form.reset();
+        await loadDashboard();
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    });
+
+    document.getElementById("demoDataForm").addEventListener("submit", async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const status = document.getElementById("demoDataStatus");
+      const button = form.querySelector('button[type="submit"]');
+      status.textContent = "Generating synthetic patient data...";
+      button.disabled = true;
+      try {
+        const response = await fetch("/api/demo-data", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            patient_count: Number(form.elements.patient_count.value)
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not generate sample data.");
+        status.textContent =
+          `Created ${result.patients_created} patients and ${result.visits_created} visits.`;
+        currentPage = 1;
+        await loadDashboard();
+      } catch (error) {
+        status.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    document.getElementById("visitForm").addEventListener("submit", async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const status = document.getElementById("visitStatus");
+      status.textContent = "Adding visit...";
+      try {
+        const response = await fetch("/api/records", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            patient_code: form.elements.patient_code.value,
+            department: form.elements.department.value.trim(),
+            visit_date: form.elements.visit_date.value,
+            visit_type: form.elements.visit_type.value.trim() || null
+          })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not add visit.");
+        status.textContent = "Visit added.";
+        form.reset();
+        setVisitDateToToday();
+        currentPage = 1;
+        loadDashboard();
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    });
+
+    setVisitDateToToday();
+    loadDashboard();
+  </script>
+</body>
+</html>
